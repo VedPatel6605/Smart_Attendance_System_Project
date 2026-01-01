@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Attendance System - Eye Scan</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">Smart Attendance System</span>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-12 text-center mb-4">
+                <h2>Eye-Scan Attendance System</h2>
+                <p class="text-primary">Reliable biometric attendance using eye/iris recognition</p>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">Admin Panel</h5>
+                        <p class="card-text">Manage users, view reports, and configure settings</p>
+                        <a href="/admin" class="btn btn-primary">Go to Admin</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">Verify & Mark Attendance</h5>
+                        <p class="card-text">Real-time verification and attendance marking</p>
+                        <a href="/verify" class="btn btn-success">Start Verification</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">System Stats</h5>
+                        <p class="card-text" id="stats-text">Loading...</p>
+                        <button class="btn btn-info" onclick="loadStats()">Refresh Stats</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Features</h5>
+                    </div>
+                    <div class="card-body">
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item">✓ Eye/Iris recognition using advanced ML models</li>
+                            <li class="list-group-item">✓ Liveness detection to prevent spoofing attacks</li>
+                            <li class="list-group-item">✓ Real-time attendance marking with timestamps</li>
+                            <li class="list-group-item">✓ Secure biometric data storage</li>
+                            <li class="list-group-item">✓ Comprehensive admin interface</li>
+                            <li class="list-group-item">✓ Attendance reports and analytics</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                document.getElementById('stats-text').innerHTML = 
+                    `Total Users: ${data.total_users}<br>Today's Attendance: ${data.today_attendance}`;
+            } catch (error) {
+                document.getElementById('stats-text').innerHTML = 'Error loading stats';
+            }
+        }
+        loadStats();
+    </script>
+</body>
+</html>
+

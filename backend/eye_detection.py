@@ -1,119 +1,69 @@
 import cv2
 import numpy as np
-import mediapipe as mp
 from typing import Tuple, Optional, List
 
-# Compatibility layer for mediapipe solutions API
-# MediaPipe 0.10.30+ removed the solutions module, so we create a compatibility shim
-if not hasattr(mp, 'solutions'):
-    class FaceMeshCompat:
-        def __init__(self, static_image_mode=False, max_num_faces=1, 
-                    refine_landmarks=True, min_detection_confidence=0.5,
-                    min_tracking_confidence=0.5):
-            self.static_image_mode = static_image_mode
-            self.max_num_faces = max_num_faces
-            self.refine_landmarks = refine_landmarks
-            self.min_detection_confidence = min_detection_confidence
-            self.min_tracking_confidence = min_tracking_confidence
-            # Use OpenCV's face detection as fallback
-            import os
-            cascade_path = None
-            # Try different possible paths for the cascade file
-            possible_paths = [
-                '/opt/anaconda3/share/opencv4/haarcascades/haarcascade_frontalface_default.xml',
-                '/usr/local/share/opencv4/haarcascades/haarcascade_frontalface_default.xml',
-                '/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml',
-            ]
-            # Also try cv2.data if available
-            try:
-                if hasattr(cv2, 'data'):
-                    possible_paths.insert(0, os.path.join(cv2.data.haarcascades, 'haarcascade_frontalface_default.xml'))
-            except:
-                pass
-            
-            for path in possible_paths:
-                if os.path.exists(path):
-                    cascade_path = path
-                    break
-            
-            if cascade_path:
-                self.face_cascade = cv2.CascadeClassifier(cascade_path)
-            else:
-                # Try to find it in common locations
-                import sys
-                for path in sys.path:
-                    test_path = os.path.join(path, 'cv2', 'data', 'haarcascade_frontalface_default.xml')
-                    if os.path.exists(test_path):
-                        self.face_cascade = cv2.CascadeClassifier(test_path)
-                        break
-                else:
-                    # Last resort: create a dummy that returns empty results
-                    class DummyCascade:
-                        def detectMultiScale(self, *args, **kwargs):
-                            return []
-                    self.face_cascade = DummyCascade()
+# Import MediaPipe with compatibility handling
+try:
+    import mediapipe as mp
+    # Try to access solutions API (old API)
+    try:
+        _mp_face_mesh = mp.solutions.face_mesh
+        _mp_drawing = mp.solutions.drawing_utils
+        HAS_OLD_API = True
+    except AttributeError:
+        HAS_OLD_API = False
+        _mp_face_mesh = None
+        _mp_drawing = None
+    
+    # Try to access tasks API (new API)
+    try:
+        from mediapipe.tasks import python as mp_tasks
+        from mediapipe.tasks.python import vision
+        HAS_NEW_API = True
+    except (ImportError, AttributeError):
+        HAS_NEW_API = False
+        mp_tasks = None
+        vision = None
         
-        def process(self, image):
-            class Results:
-                def __init__(self):
-                    self.multi_face_landmarks = []
-            
-            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY) if len(image.shape) == 3 else image
-            faces = self.face_cascade.detectMultiScale(gray, 1.1, 4)
-            
-            if len(faces) > 0:
-                # Create mock landmarks with proper structure
-                class MockLandmark:
-                    def __init__(self, x, y, z=0.0):
-                        self.x = x
-                        self.y = y
-                        self.z = z
-                
-                class MockLandmarks:
-                    def __init__(self, face_rect, img_shape):
-                        x, y, w, h = face_rect
-                        h_img, w_img = img_shape[:2]
-                        self.landmark = []
-                        # Create 468 landmark points (MediaPipe standard)
-                        for i in range(468):
-                            # Distribute landmarks across face region
-                            landmark = MockLandmark(
-                                (x + w * (i % 20) / 20) / w_img,
-                                (y + h * (i // 20) / 23) / h_img,
-                                0.0
-                            )
-                            self.landmark.append(landmark)
-                
-                results = Results()
-                results.multi_face_landmarks = [MockLandmarks(faces[0], image.shape)]
-                return results
-            
-            return Results()
-    
-    class DrawingUtilsCompat:
-        @staticmethod
-        def draw_landmarks(image, landmarks, connections=None, landmark_drawing_spec=None, connection_drawing_spec=None):
-            return image
-    
-    class SolutionsCompat:
-        class face_mesh:
-            FaceMesh = FaceMeshCompat
-        drawing_utils = DrawingUtilsCompat()
-        FACEMESH_CONTOURS = None
-    
-    mp.solutions = SolutionsCompat()
+except ImportError:
+    raise ImportError("MediaPipe not installed. Please install it with: pip install mediapipe")
+
+if not HAS_OLD_API and not HAS_NEW_API:
+    raise ImportError("MediaPipe API not available. Please reinstall mediapipe.")
 
 class EyeDetector:
     def __init__(self):
-        self.mp_face_mesh = mp.solutions.face_mesh
-        self.face_mesh = self.mp_face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
-        self.mp_drawing = mp.solutions.drawing_utils
+        self.use_new_api = not HAS_OLD_API
+        
+        if HAS_OLD_API:
+            # Use old solutions API
+            self.mp_face_mesh = _mp_face_mesh
+            self.face_mesh = self.mp_face_mesh.FaceMesh(
+                static_image_mode=False,
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5
+            )
+            self.mp_drawing = _mp_drawing
+        elif HAS_NEW_API:
+            # For new API, we'll use face_recognition as fallback since new API requires model files
+            # Try to use face_recognition library instead
+            try:
+                import face_recognition
+                self.use_face_recognition = True
+                self.face_landmarker = None
+            except ImportError:
+                raise ImportError("New MediaPipe API requires model files. Please install face_recognition: pip install face_recognition")
+            self.mp_drawing = None
+        else:
+            # Fallback to face_recognition if MediaPipe not available
+            try:
+                import face_recognition
+                self.use_face_recognition = True
+                self.use_new_api = False
+            except ImportError:
+                raise ImportError("No compatible face detection library found. Please install mediapipe or face_recognition.")
         
         # Eye landmark indices (MediaPipe Face Mesh)
         # Left eye landmarks
@@ -128,14 +78,62 @@ class EyeDetector:
     def detect_face(self, image: np.ndarray) -> Optional[dict]:
         """Detect face and return landmarks"""
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        results = self.face_mesh.process(rgb_image)
         
-        if results.multi_face_landmarks:
-            face_landmarks = results.multi_face_landmarks[0]
-            return {
-                'landmarks': face_landmarks,
-                'image_shape': image.shape
-            }
+        if not self.use_new_api and hasattr(self, 'face_mesh'):
+            # Old MediaPipe API
+            results = self.face_mesh.process(rgb_image)
+            if results.multi_face_landmarks:
+                face_landmarks = results.multi_face_landmarks[0]
+                return {
+                    'landmarks': face_landmarks,
+                    'image_shape': image.shape
+                }
+        elif hasattr(self, 'use_face_recognition') and self.use_face_recognition:
+            # Fallback to face_recognition - create dummy landmarks structure
+            import face_recognition
+            face_locations = face_recognition.face_locations(rgb_image, model='hog')
+            if len(face_locations) > 0:
+                # Create a simple landmark structure for compatibility
+                # Note: This is a simplified approach - real landmarks would need MediaPipe
+                class SimpleLandmark:
+                    def __init__(self, x, y, z=0):
+                        self.x = x
+                        self.y = y
+                        self.z = z
+                
+                class SimpleLandmarks:
+                    def __init__(self, face_location, image_shape):
+                        top, right, bottom, left = face_location
+                        h, w = image_shape[:2]
+                        # Create approximate eye landmarks based on face location
+                        # This is a simplified approximation
+                        center_x = (left + right) / 2.0 / w
+                        center_y = (top + bottom) / 2.0 / h
+                        eye_y = (top + (bottom - top) * 0.4) / h
+                        
+                        # Create minimal landmark set for eye detection
+                        self.landmark = [SimpleLandmark(0, 0) for _ in range(468)]
+                        # Set approximate eye positions
+                        # Left eye center (approximate)
+                        self.landmark[33] = SimpleLandmark(center_x - 0.1, eye_y)
+                        self.landmark[160] = SimpleLandmark(center_x - 0.15, eye_y)
+                        self.landmark[158] = SimpleLandmark(center_x - 0.1, eye_y - 0.02)
+                        self.landmark[153] = SimpleLandmark(center_x - 0.05, eye_y)
+                        self.landmark[133] = SimpleLandmark(center_x - 0.1, eye_y + 0.02)
+                        self.landmark[157] = SimpleLandmark(center_x - 0.15, eye_y)
+                        # Right eye center (approximate)
+                        self.landmark[362] = SimpleLandmark(center_x + 0.1, eye_y)
+                        self.landmark[385] = SimpleLandmark(center_x + 0.15, eye_y)
+                        self.landmark[387] = SimpleLandmark(center_x + 0.1, eye_y - 0.02)
+                        self.landmark[373] = SimpleLandmark(center_x + 0.05, eye_y)
+                        self.landmark[263] = SimpleLandmark(center_x + 0.1, eye_y + 0.02)
+                        self.landmark[386] = SimpleLandmark(center_x + 0.15, eye_y)
+                
+                return {
+                    'landmarks': SimpleLandmarks(face_locations[0], image.shape),
+                    'image_shape': image.shape
+                }
+        
         return None
     
     def get_eye_region(self, image: np.ndarray, landmarks, eye_indices: List[int]) -> Optional[np.ndarray]:
@@ -257,13 +255,16 @@ class EyeDetector:
     
     def draw_landmarks(self, image: np.ndarray, landmarks) -> np.ndarray:
         """Draw face landmarks on image for visualization"""
-        annotated_image = image.copy()
-        self.mp_drawing.draw_landmarks(
-            annotated_image,
-            landmarks,
-            self.mp_face_mesh.FACEMESH_CONTOURS,
-            None,
-            self.mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=1, circle_radius=1)
-        )
-        return annotated_image
-
+        if not self.use_new_api and self.mp_drawing:
+            annotated_image = image.copy()
+            self.mp_drawing.draw_landmarks(
+                annotated_image,
+                landmarks,
+                self.mp_face_mesh.FACEMESH_CONTOURS,
+                None,
+                self.mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=1, circle_radius=1)
+            )
+            return annotated_image
+        else:
+            # For new API, return image as-is (drawing not implemented)
+            return image.copy()
